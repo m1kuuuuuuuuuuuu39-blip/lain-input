@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lain Anim Layer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .float-char {
+    position: fixed;
+    pointer-events: none;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 28px;
+    font-weight: bold;
+    color: #00ffcc;
+    text-shadow:
+      0 0 8px #00ffcc,
+      0 0 20px #00ffcc,
+      0 0 40px rgba(0, 255, 204, 0.6);
+    will-change: transform, opacity;
+  }
+  .float-char.trail {
+    font-size: 16px;
+    color: rgba(0, 255, 204, 0.3);
+    text-shadow: 0 0 6px rgba(0, 255, 204, 0.3);
+  }
+</style>
+</head>
+<body>
+<script>
+// ================================================================
+// Animation engine — ported from weblain (spawnFlyIn / animateArc)
+// ================================================================
+function getRandomEdgePosition() {
+  var w = window.innerWidth, h = window.innerHeight;
+  var edge = Math.floor(Math.random() * 4);
+  var margin = 80 + Math.random() * 120;
+  switch (edge) {
+    case 0: return { x: Math.random() * w, y: -margin };
+    case 1: return { x: w + margin, y: Math.random() * h };
+    case 2: return { x: Math.random() * w, y: h + margin };
+    default: return { x: -margin, y: Math.random() * h };
+  }
+}
+
+function animateArc(el, from, to, delayFrac, duration, isOut, isTrail) {
+  var dx = to.x - from.x, dy = to.y - from.y;
+  var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  var px = -dy / dist, py = dx / dist;
+  if (Math.random() < 0.5) { px = -px; py = -py; }
+  var arcH = Math.max(180, dist * (0.35 + Math.random() * 0.3));
+
+  var cp1x = from.x + dx * 0.25 + px * arcH * 0.75;
+  var cp1y = from.y + dy * 0.25 + py * arcH * 0.75;
+  var cp2x = from.x + dx * 0.75 + px * arcH * 0.75;
+  var cp2y = from.y + dy * 0.75 + py * arcH * 0.75;
+
+  var startTime = performance.now();
+  var delayMs = delayFrac * duration;
+
+  function step(now) {
+    var elapsed = now - startTime - delayMs;
+    if (elapsed < 0) { requestAnimationFrame(step); return; }
+    var raw = Math.min(elapsed / (duration * (1 - delayFrac)), 1);
+    var t = isOut ? raw * raw : 1 - Math.pow(1 - raw, 2.5);
+
+    var u = 1 - t;
+    var bx = u*u*u * from.x + 3*u*u*t * cp1x + 3*u*t*t * cp2x + t*t*t * to.x;
+    var by = u*u*u * from.y + 3*u*u*t * cp1y + 3*u*t*t * cp2y + t*t*t * to.y;
+
+    var wobble = (1 - t) * 20;
+    var wx = Math.sin(raw * Math.PI * 2.5) * wobble * py;
+    var wy = Math.cos(raw * Math.PI * 2.5) * wobble * px;
+
+    el.style.transform = 'translate(' + (bx - from.x + wx).toFixed(1) + 'px, ' + (by - from.y + wy).toFixed(1) + 'px)';
+
+    if (isOut) el.style.opacity = Math.max(0, 1 - raw);
+    else if (isTrail) el.style.opacity = '' + Math.max(0, 0.18 * (1 - raw));
+
+    if (raw < 1) requestAnimationFrame(step);
+    else el.remove();
+  }
+  requestAnimationFrame(step);
+}
+
+// Spawn a character flying toward the mouse cursor position
+function spawnFlyIn(char, target) {
+  var from = getRandomEdgePosition();
+
+  // 2 trails
+  for (var i = 0; i < 2; i++) {
+    var tr = document.createElement('div');
+    tr.className = 'float-char trail';
+    tr.textContent = char;
+    tr.style.left = from.x + 'px'; tr.style.top = from.y + 'px';
+    tr.style.opacity = '0.18';
+    document.body.appendChild(tr);
+    animateArc(tr, from, target, 0.05 + i * 0.05, 420 + Math.random() * 100, false, true);
+  }
+
+  var el = document.createElement('div');
+  el.className = 'float-char';
+  el.textContent = char;
+  el.style.left = from.x + 'px'; el.style.top = from.y + 'px';
+  document.body.appendChild(el);
+  animateArc(el, from, target, 0, 320 + Math.random() * 80, false, false);
+}
+
+// Backspace: fly a dot away from mouse
+function spawnFlyOut(from) {
+  var to = getRandomEdgePosition();
+  var el = document.createElement('div');
+  el.className = 'float-char';
+  el.textContent = '●';
+  el.style.left = from.x + 'px'; el.style.top = from.y + 'px';
+  document.body.appendChild(el);
+  animateArc(el, from, to, 0, 300, true, false);
+}
+
+// Click: particle burst at click position
+function spawnClickBurst(cx, cy) {
+  var chars = ['+', '·', '•', '*', '+', '·'];
+  for (var i = 0; i < 6; i++) {
+    var el = document.createElement('div');
+    el.className = 'float-char trail';
+    el.textContent = chars[i % chars.length];
+    el.style.left = cx + 'px';
+    el.style.top = cy + 'px';
+    el.style.fontSize = (12 + i * 3) + 'px';
+    el.style.opacity = '0.5';
+    document.body.appendChild(el);
+
+    var angle = (Math.PI * 2 / 6) * i + Math.random() * 0.5;
+    var dist = 40 + Math.random() * 60;
+    var to = { x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist };
+    var startTime = performance.now();
+    var duration = 350 + Math.random() * 150;
+
+    (function(el, to, startTime, duration) {
+      function step(now) {
+        var p = Math.min((now - startTime) / duration, 1);
+        el.style.transform = 'translate(' + (to.x - cx) * p + 'px, ' + (to.y - cy) * p + 'px)';
+        el.style.opacity = '' + (0.5 * (1 - p));
+        if (p < 1) requestAnimationFrame(step);
+        else el.remove();
+      }
+      requestAnimationFrame(step);
+    })(el, to, startTime, duration);
+  }
+}
+
+// ================================================================
+// Audio — tiny keypress blip (no AudioContext needed for MVP)
+// ================================================================
+// (Skipped: overlay is passive visual only)
+
+// ================================================================
+// Main loop: listen for animation events
+// ================================================================
+window.AnimLayer.onChar(function(data) {
+  // Target: caret screen pos if available, else mouse position
+  var target = null;
+  if (data.x !== null && data.x !== undefined && data.y !== null) {
+    target = { x: data.x, y: data.y };
+  } else {
+    target = getMousePos();
+  }
+
+  if (data.type === 'backspace') {
+    spawnFlyOut(target);
+  } else if (data.type === 'char' && data.char) {
+    spawnFlyIn(data.char, target);
+  }
+});
+
+// Fallback: mouse position
+function getMousePos() {
+  return { x: window.mouseX || window.innerWidth / 2, y: window.mouseY || window.innerHeight / 2 };
+}
+
+// Track mouse globally + report to main process
+window.addEventListener('mousemove', function(e) {
+  window.mouseX = e.clientX;
+  window.mouseY = e.clientY;
+  if (window.AnimLayer && window.AnimLayer.sendMouse) {
+    window.AnimLayer.sendMouse(e.clientX, e.clientY);
+  }
+});
+
+// Click burst (works if overlay receives forwarded clicks)
+window.addEventListener('click', function(e) {
+  spawnClickBurst(e.clientX, e.clientY);
+});
+</script>
+</body>
+</html>

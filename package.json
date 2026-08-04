@@ -1,0 +1,16 @@
+{
+  "name": "lain-anim-layer",
+  "version": "1.0.0",
+  "description": "Lain-style character fly-in animation overlay for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "node-global-key-listener": "^0.3.0",
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
