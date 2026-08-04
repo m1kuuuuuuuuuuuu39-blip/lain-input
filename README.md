@@ -14,11 +14,17 @@ npm install
 npm start
 ```
 
+---
+
+如果想在vscode里实现完美效果，请Ctrl加shift加p打开在框内输入accessiblity找到Editor: Accessibility Support选择打开,如果不行请打开旁边其他相关的选项，总之就是让程序能直接收到vscode的光标位置
+
+---
+
 ## 关闭
 
 **方式 1（推荐）**：系统托盘（屏幕右下角）找到青色圆点图标 → 点击 → **Quit**
 
-**方式 2** ： Ctrl+c
+**方式 2** ： 黑框框里 Ctrl+c
 
 **方式 3**：任务管理器 → 结束 `electron.exe`（全部）
 
