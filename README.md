@@ -1,6 +1,12 @@
 # Lain Anim Layer
 
-Windows 全局字符飞入动画覆盖层。任意程序打字，字符从屏幕边缘沿贝塞尔弧线飞向输入光标。
+适配Windows  vscode全局字符飞入动画覆盖层。任意程序打字，字符从屏幕边缘沿贝塞尔弧线飞向输入光标。
+
+## 首次使用
+
+```bash
+npm install   
+```
 
 ## 打开
 
@@ -43,3 +49,18 @@ $refs = "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFra
   /r:"$refs\UIAutomationTypes.dll" `
   /r:"$refs\WindowsBase.dll" caret-probe.cs
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
