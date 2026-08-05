@@ -16,7 +16,7 @@ npm start
 
 ---
 
-如果想在vscode里实现完美效果，请Ctrl加shift加p打开在框内输入accessiblity找到Editor: Accessibility Support选择打开,如果不行请打开旁边其他相关的选项，总之就是让程序能直接收到vscode的光标位置
+如果想在vscode里实现完美效果，请Ctrl加shift加p打开在框内输入accessibility找到Editor: Accessibility Support选择打开,如果不行请打开旁边其他相关的选项，总之就是让程序能直接收到vscode的光标位置
 
 ---
 
@@ -45,7 +45,6 @@ UIA 探针分层定位（每层失败自动降级）：
 2. **DocumentRange 文本估算** — Chromium 无选区时的近似
 3. **FocusedElement 矩形** — 字符级元素取中心（Chrome），控件级取左中（QQ）
 4. **经典 Win32 caret** — GetGUIThreadInfo
-5. **鼠标位置** — 全部失败的兜底
 
 重新编译探针：
 
