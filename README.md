@@ -62,7 +62,14 @@ $refs = "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFra
 
 
 
+这是一段中文
+这是一段代码
+THIS IS A TEST TEXT 
+int main(){
 
+
+  return 0;
+}
 
 
 

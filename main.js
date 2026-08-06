@@ -143,13 +143,10 @@ function queryCaret() {
         pendingResolvers.splice(idx, 1);
         resolve(null);
       }
-    }, 200);
+    }, 300);
   });
 }
 
-// ================================================================
-// Key handler
-// ================================================================
 async function handleKey(name, shift) {
   const caret = await queryCaret();
   const data = { type: 'char', x: caret ? caret.x : null, y: caret ? caret.y : null };

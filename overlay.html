@@ -164,13 +164,10 @@ function spawnClickBurst(cx, cy) {
 // Main loop: listen for animation events
 // ================================================================
 window.AnimLayer.onChar(function(data) {
-  // Target: caret screen pos if available, else mouse position
-  var target = null;
-  if (data.x !== null && data.x !== undefined && data.y !== null) {
-    target = { x: data.x, y: data.y };
-  } else {
-    target = getMousePos();
-  }
+  // No caret detected (probe returned NONE): suppress animation entirely
+  if (data.x === null || data.x === undefined || data.y === null) return;
+
+  var target = { x: data.x, y: data.y };
 
   if (data.type === 'backspace') {
     spawnFlyOut(target);

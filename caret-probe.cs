@@ -50,10 +50,98 @@ class CaretProbe {
     }
 
     static void Log(string msg) {
-        try { Console.Error.WriteLine("[probe] " + msg); Console.Error.Flush(); } catch { }
+        try {
+            Console.Error.WriteLine("[probe] " + msg);
+            Console.Error.Flush();
+        } catch { }
+        try {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "caret-probe.log"),
+                DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg + "\n");
+        } catch { }
     }
 
     static int mouseX = -1, mouseY = -1;
+    static AutomationElement cachedDoc = null;
+    static IntPtr cachedDocHwnd = IntPtr.Zero;
+
+    // Find the largest Document control, cached across queries (VS Code UI tree is big).
+    static AutomationElement GetLargestDocument(IntPtr hwnd) {
+        if (cachedDoc != null && cachedDocHwnd == hwnd) return cachedDoc;
+        try {
+            AutomationElement root = AutomationElement.FromHandle(hwnd);
+            if (root == null) return null;
+            AutomationElement doc = null;
+            double bestArea = 0;
+            AutomationElementCollection docs = root.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+            foreach (AutomationElement d in docs) {
+                System.Windows.Rect drc = d.Current.BoundingRectangle;
+                double area = drc.Width * drc.Height;
+                if (area > bestArea && drc.Width > 100 && drc.Height > 50) {
+                    bestArea = area;
+                    doc = d;
+                }
+            }
+            if (doc != null) {
+                cachedDoc = doc;
+                cachedDocHwnd = hwnd;
+            }
+            return doc;
+        } catch (Exception ex) {
+            Log("GetLargestDocument failed: " + ex.Message);
+            return null;
+        }
+    }
+
+    // Estimate the caret inside a line-level element (VS Code accessibility).
+    // 1) Prefer the degenerate range's own bounding rect (exact for code files).
+    // 2) If that rect snaps to the line start (VS Code bug on long lines),
+    //    estimate X from the inline offset: text before caret minus the last
+    //    newline = characters typed on the current line.
+    static string EstimateCaretFromSelection(IntPtr hwnd, System.Windows.Rect lineRect) {
+        try {
+            AutomationElement doc = GetLargestDocument(hwnd);
+            if (doc == null) return null;
+            object dp = null;
+            if (!doc.TryGetCurrentPattern(TextPattern.Pattern, out dp)) return null;
+            TextPattern dtp = (TextPattern)dp;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    TextPatternRange[] dsel = dtp.GetSelection();
+                    if (dsel.Length > 0) {
+                        System.Windows.Rect[] rects = dsel[0].GetBoundingRectangles();
+                        if (rects.Length > 0 && !rects[0].IsEmpty) {
+                            Log("sel rect=[" + (int)rects[0].X + "," + (int)rects[0].Y + "]");
+                            // Exact caret position
+                            if (Math.Abs(rects[0].X - lineRect.X) >= 8) {
+                                return (int)rects[0].X + "," + (int)(rects[0].Y + rects[0].Height / 2);
+                            }
+                            // Snapped to line start: estimate from inline text offset.
+                            // Limit text fetch (2048 chars) — a long .c file before the caret
+                            // would make GetText slow and drop keystrokes. If truncated with
+                            // no newline inside, bail to the right-end fallback instead.
+                            string before = dsel[0].GetText(2048);
+                            if (before == null) before = "";
+                            int lastNl = before.LastIndexOf('\n');
+                            if (lastNl < 0 && before.Length >= 2048) {
+                                Log("truncated, bailing to fallback");
+                                return null; // truncated mid-line, fallback to right end
+                            }
+                            int inlineLen = lastNl >= 0 ? before.Length - lastNl - 1 : before.Length;
+                            int estX = (int)lineRect.X + Math.Min(inlineLen * 8, (int)lineRect.Width);
+                            Log("est inline len=" + inlineLen + " -> x=" + estX);
+                            return estX + "," + (int)(lineRect.Y + lineRect.Height / 2);
+                        }
+                    }
+                } catch { }
+                if (attempt < 2) System.Threading.Thread.Sleep(50);
+            }
+        } catch (Exception ex) {
+            Log("EstimateCaretFromSelection failed: " + ex.Message);
+        }
+        return null;
+    }
 
     static string Probe() {
         IntPtr hwnd = GetForegroundWindow();
@@ -142,10 +230,18 @@ class CaretProbe {
                 if (focused != null) {
                     System.Windows.Rect r = focused.Current.BoundingRectangle;
                     Log("focused rect=[" + (int)r.X + "," + (int)r.Y + "," + (int)r.Width + "," + (int)r.Height + "]");
-                    if (!r.IsEmpty && r.Width > 0 && r.Height > 0 && r.Width < 500 && r.Height < 120) {
+                    if (!r.IsEmpty && r.Width > 0 && r.Height > 0 && r.Width < 5000 && r.Height < 120) {
                         if (r.Width <= 50 && r.Height <= 40) {
                             // Character-level element: use its center
                             return (int)(r.X + r.Width / 2) + "," + (int)(r.Y + r.Height / 2);
+                        }
+                        if (r.Width > 50 && r.Width < 3000 && r.Height <= 40) {
+                            // Line-level element (VS Code accessibility): the element is the whole
+                            // line, edges are NOT the caret. Try degenerate-range estimation first.
+                            string est = EstimateCaretFromSelection(hwnd, r);
+                            if (est != null) return est;
+                            // Fallback: right end
+                            return (int)(r.X + r.Width - 4) + "," + (int)(r.Y + r.Height / 2);
                         }
                         // Control-level: left-center
                         return (int)r.X + "," + (int)(r.Y + r.Height / 2);
@@ -164,9 +260,9 @@ class CaretProbe {
                 AutomationElement root = AutomationElement.FromHandle(hwnd);
                 if (root != null) {
                     // 4a: Document control (VS Code editor, browsers) with TextPattern
-                    // Retry a few times: VS Code needs a moment to activate accessibility mode
-                    AutomationElement doc = root.FindFirst(TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+                    // VS Code has MULTIPLE Document elements — pick the LARGEST visible one,
+                    // cached to avoid re-walking the huge UI tree on every keystroke.
+                    AutomationElement doc = GetLargestDocument(hwnd);
                     if (doc != null) {
                         System.Windows.Rect dr = doc.Current.BoundingRectangle;
                         Log("drill doc=[" + (int)dr.X + "," + (int)dr.Y + "," + (int)dr.Width + "," + (int)dr.Height + "]");
@@ -180,13 +276,40 @@ class CaretProbe {
                                         System.Windows.Rect[] rects = dsel[0].GetBoundingRectangles();
                                         if (rects.Length > 0 && !rects[0].IsEmpty) {
                                             Log("doc sel rect=[" + (int)rects[0].X + "," + (int)rects[0].Y + "] attempt=" + attempt);
+                                            // VS Code code files: caret rect may snap to line start.
+                                            // Line-start X == editor content left edge (FocusedElement X),
+                                            // not the document wrapper X (0). Get editor left edge.
+                                            double editorLeft = dr.X;
+                                            try {
+                                                AutomationElement fe = AutomationElement.FocusedElement;
+                                                if (fe != null) {
+                                                    System.Windows.Rect fr = fe.Current.BoundingRectangle;
+                                                    if (!fr.IsEmpty && fr.Width > 100 && fr.Width < 5000 && fr.Height > 100) {
+                                                        editorLeft = fr.X; // editor container left edge
+                                                    }
+                                                }
+                                            } catch { }
+                                            if (Math.Abs(rects[0].X - editorLeft) < 8) {
+                                                try {
+                                                    string before = dsel[0].GetText(4096);
+                                                    int estX = (int)editorLeft + Math.Min(before.Length * 8, (int)(rects[0].X + rects[0].Width));
+                                                    Log("est x from text len=" + before.Length + " editorLeft=" + (int)editorLeft + " -> " + estX);
+                                                    return estX + "," + (int)(rects[0].Y + rects[0].Height / 2);
+                                                } catch (Exception ex) {
+                                                    Log("est text failed: " + ex.Message);
+                                                }
+                                            }
                                             return (int)rects[0].X + "," + (int)rects[0].Y;
                                         }
                                     }
-                                } catch { }
+                                } catch (Exception ex) {
+                                    Log("doc sel attempt " + attempt + " ex: " + ex.Message);
+                                }
                                 if (attempt < 2) System.Threading.Thread.Sleep(50);
                             }
                             Log("doc GetSelection empty after retries");
+                        } else {
+                            Log("doc has no TextPattern");
                         }
                         // Document without selection: use its center as fallback
                         if (!dr.IsEmpty && dr.Width > 0 && dr.Height > 0) {
